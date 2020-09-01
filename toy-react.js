@@ -22,8 +22,41 @@ export class Component {
     }
 
     rerender () {
-        this._range.deleteContents()
-        this[RENDER_TO_DOM](this._range)
+        // 保存原始range
+        const oldRange = this._range
+
+        // 由于直接删除range 再创建新的range 会导致range插入到老的range中 就会出现每次点击少一格 所以要记录xinrange保证不会被插入到老range中
+        const range = document.createRange()
+        range.setStart(oldRange.startContainer, oldRange.startOffset)
+        range.setEnd(oldRange.startContainer, oldRange.startOffset)
+        
+        this[RENDER_TO_DOM](range)
+
+        // 由于创建新的range会被插入到老range中去，老range范围会变大 所以重新设置老的range的范围
+        oldRange.setStart(range.endContainer, range.endOffset)
+        oldRange.deleteContents()
+    }
+
+    setState (newState) {
+        const isObject = typeof this.state !== 'object'
+        if (this.state === null || isObject) {
+            this.state = newState
+            this.rerender()
+            return
+        }
+        let merge = (oldState, newState) => {
+            for (let key in newState) {
+                if (oldState[key] === null || oldState[key] !== 'object') {
+                    oldState[key] = newState[key]
+                } else {
+                    merge(oldState[key], newState[key])
+                }
+            }
+        }
+
+        merge(this.state, newState)
+
+        this.rerender()
     }
 }
 
@@ -37,7 +70,11 @@ class ElementWrapper {
             console.log(1)
             this.root.addEventListener(RegExp.$1.replace(/^[\s\S]/, c => c.toLowerCase()), value)
         } else {
-            this.props[name] = value
+            if (name === 'className') {
+                this.root.setAttribute('class', value)
+            } else {
+                this.root.setAttribute(name, value)
+            }
         }
     }
 
@@ -77,9 +114,9 @@ export function createElement (tagName, attributes, ...children) {
     if (typeof tagName === 'string') {
         tar = new ElementWrapper(tagName)
     } else {
-        tar = new tagName
+        tar = new tagName()
     }
-  
+    
     for (const key in attributes) {
         tar.setAttribute(key, attributes[key])
     }
@@ -88,7 +125,10 @@ export function createElement (tagName, attributes, ...children) {
         for (let child of children) {
             if (typeof child === 'string') {
                 child = new TextWrapper(child)
-            } 
+            }
+            if (child === null) {
+                continue
+            }
             if (typeof child === 'object' && child instanceof Array) {
                 insertChildren(child)
             } else {
